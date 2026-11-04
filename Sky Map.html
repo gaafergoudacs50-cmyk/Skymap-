@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sky Map</title>
+<style>
+:root{--bg:#02040c;--fg:#cfd8ff;--ui:rgba(6,12,30,.8);--ac:#7fa6ff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:13px system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
+body.red canvas{filter:sepia(1) saturate(6) hue-rotate(-52deg) brightness(.85)}
+button{background:none;border:0;color:var(--fg);cursor:pointer;font:inherit;opacity:.8}
+button:hover{opacity:1}
+#top{position:fixed;top:env(safe-area-inset-top,0px);left:0;right:0;height:42px;background:var(--ui);display:flex;align-items:center;gap:6px;padding:0 10px;backdrop-filter:blur(4px)}
+#top b{font-weight:500;letter-spacing:.04em;margin-right:auto}
+#top button{font-size:18px;width:34px;height:34px}
+#sw{position:relative;display:none}#sw.on{display:block}
+#q{background:#0a1430;border:1px solid #28407a;color:var(--fg);padding:6px 9px;border-radius:4px;width:200px;font:inherit}
+#res{position:absolute;top:34px;right:0;width:100%;background:#0a1430;border:1px solid #28407a;max-height:50vh;overflow:auto}
+#res div{padding:6px 9px;cursor:pointer;display:flex;justify-content:space-between}#res div:hover{background:#17306a}#res i{opacity:.55;font-style:normal;font-size:11px}
+#side{position:fixed;left:8px;top:calc(60px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;background:var(--ui);border:1px solid #1b2a55;border-radius:4px}
+#side button{width:36px;height:36px;font-size:17px;opacity:.4}#side button.on{opacity:1;color:#ffb347}
+#info{position:fixed;right:10px;bottom:calc(10px + env(safe-area-inset-bottom,0px));width:250px;max-width:calc(100% - 20px);background:var(--ui);border:1px solid #28407a;border-radius:6px;padding:10px 12px;backdrop-filter:blur(4px)}
+#info[hidden]{display:none}
+#info h2{margin:0;font-size:16px;font-weight:500}#info .cat{color:var(--ac);font-size:11px;margin-bottom:6px}
+#info dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:6px 0;font-variant-numeric:tabular-nums}#info dt{opacity:.55}#info dd{margin:0}
+#info p{margin:6px 0 0;opacity:.8;line-height:1.35}#x{position:absolute;right:6px;top:4px;font-size:18px}
+#tm{position:fixed;left:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));font-size:11px;background:var(--ui);padding:4px 8px;border-radius:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 290px)}
+#tm button{font-size:11px;padding:2px 5px;border:1px solid #28407a;border-radius:3px}#tl{opacity:.7;margin-left:4px}
+@media(max-width:640px){#tm{bottom:auto;top:calc(48px + env(safe-area-inset-top,0px));left:auto;right:6px;max-width:60%}#side{top:calc(90px + env(safe-area-inset-top,0px))}}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="top"><b>✦ Sky Map</b>
+<div id="sw"><input id="q" placeholder="Search star, planet, M42, Orion…" autocomplete="off"><div id="res"></div></div>
+<button id="bS" title="Search">⌕</button><button id="bV" title="Night vision (red)">◐</button><button id="bL" title="Location">⌖</button><button id="bF" title="Fullscreen">⛶</button></div>
+<div id="side"></div>
+<div id="tm"><button data-d="-86400000">−1d</button><button data-d="-3600000">−1h</button><button data-d="0">Now</button><button data-d="3600000">+1h</button><button data-d="86400000">+1d</button><span id="tl"></span></div>
+<div id="info" hidden><button id="x">×</button><h2 id="in"></h2><div class="cat" id="ic"></div><dl id="idl"></dl><p id="ids"></p></div>
+<script>
+/* ============ DATA LAYER (J2000 RA hours, Dec degrees, visual magnitude) ============ */
+const STARS=`Sirius,6.752,-16.716,-1.46;Canopus,6.399,-52.696,-0.74;Arcturus,14.261,19.182,-0.05;Rigil Kent,14.660,-60.834,-0.01;Vega,18.616,38.784,0.03;Capella,5.278,45.998,0.08;Rigel,5.242,-8.202,0.13;Procyon,7.655,5.225,0.34;Achernar,1.629,-57.237,0.46;Betelgeuse,5.919,7.407,0.5;Hadar,14.064,-60.373,0.61;Altair,19.846,8.868,0.76;Acrux,12.443,-63.099,0.76;Aldebaran,4.599,16.509,0.85;Antares,16.490,-26.432,1.06;Spica,13.420,-11.161,0.97;Pollux,7.755,28.026,1.14;Fomalhaut,22.961,-29.622,1.16;Deneb,20.690,45.280,1.25;Mimosa,12.795,-59.689,1.25;Regulus,10.139,11.967,1.35;Adhara,6.977,-28.972,1.5;Castor,7.577,31.888,1.58;Gacrux,12.519,-57.113,1.64;Shaula,17.560,-37.104,1.62;Bellatrix,5.419,6.350,1.64;Elnath,5.438,28.608,1.65;Miaplacidus,9.220,-69.717,1.67;Alnilam,5.604,-1.202,1.69;Alnitak,5.679,-1.943,1.77;Mintaka,5.533,-0.299,2.23;Saiph,5.796,-9.670,2.06;Meissa,5.585,9.934,3.4;Alioth,12.900,55.960,1.77;Dubhe,11.062,61.751,1.79;Mirfak,3.405,49.861,1.79;Wezen,7.140,-26.393,1.84;Sargas,17.622,-42.998,1.87;Kaus Australis,18.403,-34.385,1.85;Alkaid,13.792,49.313,1.86;Menkalinan,5.992,44.948,1.9;Alhena,6.629,16.399,1.93;Polaris,2.530,89.264,1.98;Mirzam,6.378,-17.956,1.98;Alphard,9.460,-8.659,1.98;Hamal,2.119,23.463,2.0;Diphda,0.726,-17.987,2.04;Nunki,18.921,-26.297,2.05;Menkent,14.111,-36.370,2.06;Mirach,1.162,35.621,2.06;Alpheratz,0.139,29.091,2.06;Rasalhague,17.582,12.560,2.07;Kochab,14.845,74.156,2.08;Algol,3.136,40.956,2.1;Almach,2.065,42.330,2.1;Denebola,11.818,14.572,2.14;Mizar,13.399,54.925,2.04;Schedar,0.675,56.537,2.24;Caph,0.153,59.150,2.27;Gamma Cas,0.945,60.717,2.47;Ruchbah,1.430,60.235,2.68;Segin,1.907,63.670,3.37;Merak,11.031,56.382,2.37;Phecda,11.897,53.695,2.44;Megrez,12.257,57.033,3.31;Eltanin,17.943,51.489,2.23;Sadr,20.370,40.257,2.2;Albireo,19.512,27.960,3.1;Gienah,20.770,33.970,2.46;Delta Cyg,19.750,45.131,2.87;Alnair,22.137,-46.961,1.74;Enif,21.736,9.875,2.39;Markab,23.079,15.205,2.49;Scheat,23.063,28.083,2.42;Algenib,0.220,15.184,2.83;Dschubba,16.005,-22.622,2.3;Graffias,16.090,-19.805,2.62;Epsilon Sco,16.836,-34.293,2.29;Mu1 Sco,16.864,-38.047,3.0;Zeta Sco,16.910,-42.36,3.6;Lesath,17.512,-37.296,2.7;Menkar,3.038,4.090,2.53;Zeta Tau,5.627,21.14,3.0;Ain,4.477,19.18,3.5;Gamma Tau,4.330,15.63,3.65;Mebsuta,6.732,25.131,3.0;Tejat,6.383,22.514,2.9;Alzirr,6.755,12.896,3.35;Wasat,7.335,21.982,3.5;Gomeisa,7.452,8.289,2.9;Naos,8.060,-40.003,2.25;Aspidiske,9.285,-59.275,2.25;Avior,8.375,-59.51,1.86;Suhail,9.133,-43.43,2.2;Algieba,10.333,19.842,2.0;Zosma,11.235,20.524,2.56;Chertan,11.237,15.43,3.3;Alphecca,15.578,26.715,2.2;Arneb,5.545,-17.822,2.58;Nihal,5.471,-20.759,2.84;Mu Lep,5.215,-16.205,3.3;Zaurak,3.967,-13.508,2.95;Acamar,2.971,-40.30,2.9;Kornephoros,16.503,21.49,2.8;Zeta Her,16.688,31.60,2.8;Eta Her,16.715,38.92,3.5;Pi Her,17.251,36.81,3.2;Epsilon Her,17.005,30.93,3.9;Ras Algethi,17.244,14.39,3.0;Alshain,19.922,6.407,3.7;Tarazed,19.771,10.613,2.7;Sheratan,1.911,20.81,2.6;Mesarthim,1.892,19.29,3.9;Zeta Per,3.902,31.88,2.85;Epsilon Per,3.964,40.01,2.9;Delta Per,3.715,47.79,3.0;Theta Aur,5.995,37.21,2.6;Iota Aur,4.95,33.17,2.7;Pherkad,15.345,71.834,3.0;Yildun,17.537,86.586,4.3;Eps UMi,16.766,82.04,4.2;Zeta UMi,15.734,77.79,4.3;Eta UMi,16.29,75.76,5.0;Izar,14.750,27.074,2.7;Seginus,14.535,38.31,3.0;Nekkar,15.032,40.39,3.5;Muphrid,13.911,18.40,2.7;Imai,12.252,-58.749,2.8;Kaus Media,18.350,-29.83,2.7;Kaus Borealis,18.466,-25.42,2.8;Ascella,19.043,-29.88,2.6;Tau Sgr,19.116,-27.67,3.3;Phi Sgr,18.761,-26.99,3.2;Alnasl,18.097,-30.42,3.0;Alcyone,3.791,24.105,2.87`;
+// id,common name,kind(G/N/C),RA h,Dec,mag
+const DSO=`M31,Andromeda Galaxy,G,0.712,41.27,3.4;M42,Orion Nebula,N,5.588,-5.39,4;M45,Pleiades,C,3.79,24.1,1.6;M44,Beehive Cluster,C,8.67,19.67,3.7;M13,Hercules Cluster,C,16.695,36.46,5.8;M1,Crab Nebula,N,5.575,22.01,8.4;M8,Lagoon Nebula,N,18.06,-24.38,6;M27,Dumbbell Nebula,N,19.994,22.72,7.5;M57,Ring Nebula,N,18.893,33.03,8.8;M51,Whirlpool Galaxy,G,13.498,47.2,8.4;M81,Bode's Galaxy,G,9.926,69.07,6.9;M33,Triangulum Galaxy,G,1.564,30.66,5.7;M35,Open cluster in Gemini,C,6.15,24.33,5.3;M36,Open cluster in Auriga,C,5.6,34.14,6.3;M37,Open cluster in Auriga,C,5.87,32.55,6.2;M38,Open cluster in Auriga,C,5.48,35.85,7.4;M3,Globular cluster,C,13.703,28.38,6.2;M4,Globular cluster,C,16.393,-26.53,5.6;M22,Sagittarius Cluster,C,18.607,-23.9,5.1;M7,Ptolemy Cluster,C,17.9,-34.8,3.3;M20,Trifid Nebula,N,18.03,-23.03,6.3;M17,Omega Nebula,N,18.346,-16.17,6;M87,Virgo A,G,12.514,12.39,8.6;LMC,Large Magellanic Cloud,G,5.39,-69.75,0.9`;
+const CON=`Orion|Meissa-Betelgeuse-Alnitak-Alnilam-Mintaka-Bellatrix-Meissa/Alnitak-Saiph-Rigel-Mintaka;Taurus|Zeta Tau-Aldebaran-Gamma Tau-Ain-Elnath;Gemini|Castor-Mebsuta-Tejat/Pollux-Wasat-Alzirr-Alhena/Mebsuta-Wasat;Canis Major|Mirzam-Sirius-Wezen-Adhara;Canis Minor|Procyon-Gomeisa;Lepus|Arneb-Nihal/Arneb-Mu Lep;Auriga|Capella-Menkalinan-Theta Aur-Elnath-Iota Aur-Capella;Ursa Major|Dubhe-Merak-Phecda-Megrez-Dubhe/Megrez-Alioth-Mizar-Alkaid;Ursa Minor|Polaris-Yildun-Eps UMi-Zeta UMi-Eta UMi-Pherkad-Kochab-Zeta UMi;Cassiopeia|Segin-Ruchbah-Gamma Cas-Schedar-Caph;Perseus|Delta Per-Mirfak-Algol/Mirfak-Epsilon Per-Zeta Per;Andromeda|Alpheratz-Mirach-Almach;Pegasus|Markab-Scheat-Alpheratz-Algenib-Markab;Cygnus|Deneb-Sadr-Albireo/Delta Cyg-Sadr-Gienah;Aquila|Alshain-Altair-Tarazed;Leo|Regulus-Algieba-Zosma-Denebola-Chertan-Zosma;Bootes|Muphrid-Arcturus-Izar-Seginus-Nekkar;Scorpius|Graffias-Dschubba-Antares-Epsilon Sco-Mu1 Sco-Zeta Sco-Sargas-Shaula-Lesath;Sagittarius|Alnasl-Kaus Australis-Ascella-Tau Sgr-Nunki-Phi Sgr-Kaus Borealis-Kaus Media-Kaus Australis;Crux|Gacrux-Acrux/Mimosa-Imai;Centaurus|Rigil Kent-Hadar-Menkent;Carina|Canopus-Avior-Aspidiske-Miaplacidus;Hercules|Epsilon Her-Zeta Her-Eta Her-Pi Her-Epsilon Her/Zeta Her-Kornephoros-Ras Algethi;Aries|Hamal-Sheratan-Mesarthim`;
+// JPL "Keplerian elements for 1800-2050": value, rate per century for a,e,I,L,long.peri,long.node
+const EL={Mercury:[.38709927,.00000037,.20563593,.00001906,7.00497902,-.00594749,252.2503235,149472.67411175,77.45779628,.16047689,48.33076593,-.12534081],
+Venus:[.72333566,.0000039,.00677672,-.00004107,3.39467605,-.0007889,181.9790995,58517.81538729,131.60246718,.00268329,76.67984255,-.27769418],
+Earth:[1.00000261,.00000562,.01671123,-.00004392,-.00001531,-.01294668,100.46457166,35999.37244981,102.93768193,.32327364,0,0],
+Mars:[1.52371034,.00001847,.0933941,.00007882,1.84969142,-.00813131,-4.55343205,19140.30268499,-23.94362959,.44441088,49.55953891,-.29257343],
+Jupiter:[5.202887,-.00011607,.04838624,-.00013253,1.30439695,-.00183714,34.39644051,3034.74612775,14.72847983,.21252668,100.47390909,.20469106],
+Saturn:[9.53667594,-.0012506,.05386179,-.00050991,2.48599187,.00193609,49.95424423,1222.49362201,92.59887831,-.41897216,113.66242448,-.28867794]};
+const PINFO={Mercury:['Innermost planet. It never strays far from the Sun, so it is best seen near dawn or dusk.',0,'#bdb7ae'],Venus:['Brightest planet, wrapped in thick clouds: the "morning" or "evening star".',-4,'#fff3c8'],Mars:['The Red Planet, tinted by iron-oxide dust.',1,'#ff7a55'],Jupiter:['Largest planet, a gas giant. Its four Galilean moons show in binoculars.',-2.2,'#f0d9b0'],Saturn:['Gas giant famous for its rings, visible in small telescopes.',.6,'#e8d490']};
+const KIND={G:'Galaxy',N:'Nebula',C:'Star cluster'};
+const KDESC={G:'A vast system of stars, gas and dust bound by gravity.',N:'A glowing cloud of gas and dust where stars are born or have died.',C:'A gravitationally bound group of stars.'};
+const WARM=new Set('Betelgeuse Antares Aldebaran Arcturus Pollux Mirach Alphard Hamal Kochab Dubhe Menkent Diphda Alpheratz Ras Algethi Eta Her'.split(' ')),BLUE=new Set('Rigel Spica Bellatrix Regulus Achernar Mimosa Hadar Adhara Vega Sirius Alnilam Alnitak Mintaka Shaula Mirzam Acrux Altair Alhena Elnath Alcyone Saiph Meissa'.split(' '));
+
+/* ============ MODEL ============ */
+const $=id=>document.getElementById(id),R=Math.PI/180,EPS=23.4393*R,OBJ=[],BY={},CONS=[];
+const eq=(ra,d)=>{ra*=15*R;d*=R;return[Math.cos(d)*Math.cos(ra),Math.cos(d)*Math.sin(ra),Math.sin(d)]};
+const add=o=>{OBJ.push(o);BY[o.n]=o;return o};
+STARS.split(';').forEach(s=>{const[n,ra,d,m]=s.split(',');add({n,t:'Star',m:+m,e:eq(+ra,+d)})});
+DSO.split(';').forEach(s=>{const[n,a,k,ra,d,m]=s.split(',');add({n,a,k,t:KIND[k],m:+m,e:eq(+ra,+d),dso:1,desc:`${a}. ${KDESC[k]}`})});
+CON.split(';').forEach(s=>{const[n,l]=s.split('|');const lines=l.split('/').map(p=>p.split('-').map(x=>BY[x]).filter(Boolean));
+ const st=new Set(lines.flat());let v=[0,0,0];st.forEach(o=>{o.con=o.con||n;v=v.map((x,i)=>x+o.e[i])});const L=Math.hypot(...v);
+ add({n,t:'Constellation',e:v.map(x=>x/L),lines,cn:1,m:99,desc:`A pattern of ${st.size} bright stars.`});CONS.push(BY[n])});
+Object.keys(PINFO).forEach(n=>add({n,t:'Planet',m:PINFO[n][1],e:[1,0,0],pl:1,desc:PINFO[n][0],col:PINFO[n][2]}));
+const SUN=add({n:'Sun',t:'Star',m:-26,e:[1,0,0],pl:1,desc:'Our star. Never look at it directly.'}),MOON=add({n:'Moon',t:'Moon',m:-10,e:[1,0,0],pl:1,desc:"Earth's natural satellite."});
+const nrm=v=>{const l=Math.hypot(...v);return v.map(x=>x/l)},ecl=(x,y,z)=>[x,y*Math.cos(EPS)-z*Math.sin(EPS),y*Math.sin(EPS)+z*Math.cos(EPS)];
+function helio(el,T){const p=i=>el[2*i]+el[2*i+1]*T,a=p(0),e=p(1),I=p(2)*R,L=p(3),w=p(4),O=p(5)*R,M=((L-w)%360)*R;let E=M;for(let i=0;i<8;i++)E=M+e*Math.sin(E);
+ const xv=a*(Math.cos(E)-e),yv=a*Math.sqrt(1-e*e)*Math.sin(E),o=(w-p(5))*R,co=Math.cos(o),so=Math.sin(o),cO=Math.cos(O),sO=Math.sin(O),cI=Math.cos(I);
+ return[(co*cO-so*sO*cI)*xv+(-so*cO-co*sO*cI)*yv,(co*sO+so*cO*cI)*xv+(-so*sO+co*cO*cI)*yv,so*Math.sin(I)*xv+co*Math.sin(I)*yv]}
+let sunLon=0;
+function solar(d){const T=d/36525,E=helio(EL.Earth,T);
+ for(const n in PINFO){const p=helio(EL[n],T);BY[n].e=nrm(ecl(p[0]-E[0],p[1]-E[1],p[2]-E[2]))}
+ SUN.e=nrm(ecl(-E[0],-E[1],-E[2]));sunLon=Math.atan2(-E[1],-E[0])/R;
+ const L=218.316+13.176396*d,M=(134.963+13.064993*d)*R,F=(93.272+13.22935*d)*R,lon=(L+6.289*Math.sin(M))*R,lat=5.128*Math.sin(F)*R;
+ MOON.e=ecl(Math.cos(lat)*Math.cos(lon),Math.cos(lat)*Math.sin(lon),Math.sin(lat));MOON.el=(((L+6.289*Math.sin(M)-sunLon)%360)+360)%360}
+
+/* ============ VIEW STATE ============ */
+const cv=$('c'),g=cv.getContext('2d');let W,H;
+let lat=29.07,lon=31.10,tOff=0,V={A:180,h:38,fov:105},tg=null,sel=null,moved=0,fr=0,dark=0;
+const LAY={stars:1,lines:1,names:1,planets:1,dso:1,grid:0,hor:1,ecl:1};
+const BTN=[['lines','⌇','Constellation lines'],['names','Aa','Constellation names'],['stars','✦','Star names'],['planets','♄','Planets, Sun & Moon'],['dso','◎','Deep-sky objects'],['grid','#','Coordinate grid'],['ecl','∿','Ecliptic & equator'],['hor','⏤','Horizon & directions']];
+function resize(){const d=devicePixelRatio||1;W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;g.setTransform(d,0,0,d,0,0)}addEventListener('resize',resize);resize();
+let ct,st,cp,sp,sc,fx,fy,fz,rx,ry,ux,uy,uz;
+const toH=(X,Y,Z)=>{const a=X*ct+Y*st,b=X*st-Y*ct;return[-b,Z*cp-a*sp,Z*sp+a*cp]};
+const proj=v=>{const px=v[0]*rx+v[1]*ry,py=v[0]*ux+v[1]*uy+v[2]*uz,pz=v[0]*fx+v[1]*fy+v[2]*fz,k=2/(1+pz+1e-9);return[W/2+sc*k*px,H/2-sc*k*py,pz]};
+const altaz=v=>[Math.asin(v[2])/R,(Math.atan2(v[0],v[1])/R+360)%360];
+
+/* ============ RENDER ============ */
+function T(t,x,y,c,f,al){g.font=f||'11px system-ui,sans-serif';g.fillStyle=c;g.textAlign=al||'left';g.fillText(t,x,y)}
+function curve(fn,n){let pen=0,best=null,bd=1e9;g.beginPath();for(let i=0;i<=n;i++){const p=proj(fn(i));if(p[2]<-.6){pen=0;continue}pen?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]);pen=1;
+ if(p[0]>40&&p[0]<W-40&&p[1]>60&&p[1]<H-40){const d=Math.hypot(p[0]-W/2,p[1]-H/2);if(d<bd){bd=d;best=p}}}g.stroke();return best}
+function moon(x,y,r,e){g.save();g.translate(x,y);const w=e<180,ee=w?e:360-e;if(!w)g.scale(-1,1);const c=Math.cos(ee*R);
+ g.fillStyle='#2a2f3d';g.beginPath();g.arc(0,0,r,0,7);g.fill();g.fillStyle='#f1eedd';g.beginPath();g.arc(0,0,r,-Math.PI/2,Math.PI/2);
+ g.ellipse(0,0,r*Math.abs(c),r,0,Math.PI/2,c>0?-Math.PI/2:Math.PI*1.5,c>0);g.fill();g.restore()}
+function draw(){
+ const now=new Date(Date.now()+tOff),d=now/864e5+2440587.5-2451545;solar(d);
+ const th=((280.46061837+360.98564736629*d+lon)%360)*R;ct=Math.cos(th);st=Math.sin(th);cp=Math.cos(lat*R);sp=Math.sin(lat*R);
+ if(tg){const dA=((tg.A-V.A+540)%360)-180;V.A+=dA*.14;V.h+=(tg.h-V.h)*.14;V.fov*=Math.pow(tg.fov/V.fov,.14);if(Math.abs(dA)<.05&&Math.abs(tg.h-V.h)<.05&&Math.abs(Math.log(tg.fov/V.fov))<.003)tg=null}
+ V.A=(V.A+360)%360;const A=V.A*R,h=V.h*R;fx=Math.cos(h)*Math.sin(A);fy=Math.cos(h)*Math.cos(A);fz=Math.sin(h);rx=Math.cos(A);ry=-Math.sin(A);ux=-Math.sin(A)*Math.sin(h);uy=-Math.cos(A)*Math.sin(h);uz=Math.cos(h);
+ sc=(H/2)/(2*Math.tan(V.fov*R/4));
+ const gr=g.createRadialGradient(W*.5,H*.35,0,W*.5,H*.35,Math.max(W,H)*.8);gr.addColorStop(0,'#0b1f50');gr.addColorStop(.55,'#050d28');gr.addColorStop(1,'#01030a');g.fillStyle=gr;g.fillRect(0,0,W,H);
+ for(const o of OBJ){o.v=toH(...o.e);o.p=proj(o.v)}
+ g.lineWidth=1;
+ if(LAY.grid){g.strokeStyle='rgba(90,130,220,.16)';for(let dc=-60;dc<=60;dc+=30)if(dc)curve(i=>toH(...eq(i/10,dc)),240);for(let r=0;r<24;r+=2)curve(i=>toH(...eq(r,-88+i*2.93)),60)}
+ if(LAY.ecl){g.strokeStyle='rgba(120,200,140,.35)';let b=curve(i=>{const l=i*R*3;return toH(...ecl(Math.cos(l),Math.sin(l),0))},120);if(b)T('Ecliptic',b[0]+8,b[1]-6,'#7fbf8f');
+  g.strokeStyle='rgba(120,160,255,.3)';b=curve(i=>toH(...eq(i/10,0)),240);if(b)T('Celestial equator',b[0]+8,b[1]-6,'#7f9fe0')}
+ if(LAY.lines){g.strokeStyle='rgba(110,120,215,.6)';g.beginPath();for(const c of CONS)for(const l of c.lines)for(let i=1;i<l.length;i++){const a=l[i-1].p,b=l[i].p;if(a[2]>-.5&&b[2]>-.5){g.moveTo(a[0],a[1]);g.lineTo(b[0],b[1])}}g.stroke()}
+ const zs=Math.min(1.9,Math.max(.85,Math.pow(90/V.fov,.3))),lim=2.3+1.3*Math.log2(90/V.fov);
+ if(LAY.dso)for(const o of OBJ)if(o.dso&&o.p[2]>-.5){const[x,y]=o.p,r=Math.max(4,7*zs);g.strokeStyle='#4fc05a';g.beginPath();
+  if(o.k=='G')g.ellipse(x,y,r*1.3,r*.7,.5,0,7);else if(o.k=='N')g.rect(x-r*.8,y-r*.8,r*1.6,r*1.6);else g.arc(x,y,r,0,7);g.stroke();
+  if(o.m<lim+3.5)T(o.n,x+r+3,y+3,'#4fc05a')}
+ for(const o of OBJ)if(o.t=='Star'&&!o.pl&&o.p[2]>-.5){const[x,y]=o.p;if(x<-20||x>W+20||y<-20||y>H+20)continue;const r=Math.max(.7,(5.6-o.m)*.5*zs),al=o.v[2]<0?.45:1,c=WARM.has(o.n)?'255,190,130':BLUE.has(o.n)?'180,205,255':'255,255,255';
+  if(o.m<2.2){const gl=g.createRadialGradient(x,y,0,x,y,r*4);gl.addColorStop(0,`rgba(${c},${.35*al})`);gl.addColorStop(1,`rgba(${c},0)`);g.fillStyle=gl;g.fillRect(x-r*4,y-r*4,r*8,r*8)}
+  g.fillStyle=`rgba(${c},${al})`;g.beginPath();g.arc(x,y,r,0,7);g.fill();
+  if(LAY.stars&&o.m<lim&&!/ (Cas|Cyg|Per|Aur|Tau|Sco|Her|UMi|Sgr|Lep)$|^Mu1|^Eps|^Zeta|^Eta|^Pi |^Tau|^Phi|^Delta|^Iota|^Theta|^Epsilon|^Gamma/.test(o.n)||o===sel)T(o.n,x+r+4,y-r-2,'#dfe6ff')}
+ if(LAY.names)for(const o of CONS)if(o.p[2]>0)T(o.n,o.p[0],o.p[1],'#c4849a','11px system-ui','center');
+ if(LAY.planets)for(const o of OBJ)if(o.pl&&o.p[2]>-.5){const[x,y]=o.p;
+  if(o===MOON){const r=Math.max(8,.27*R*sc*2);moon(x,y,r,o.el);T('Moon',x+r+4,y+3,'#ff8f80')}
+  else if(o===SUN){const gl=g.createRadialGradient(x,y,0,x,y,26);gl.addColorStop(0,'rgba(255,230,120,.9)');gl.addColorStop(1,'rgba(255,200,60,0)');g.fillStyle=gl;g.fillRect(x-26,y-26,52,52);T('Sun',x+12,y+3,'#ffd36a')}
+  else{const r=Math.max(2.5,(3.6-o.m*.25)*zs);g.fillStyle=o.col;g.beginPath();g.arc(x,y,r,0,7);g.fill();T(o.n,x+r+4,y+3,'#ff9a8a')}}
+ if(LAY.hor){g.strokeStyle='#b8893a';g.lineWidth=1.5;curve(i=>[Math.sin(i*R*2),Math.cos(i*R*2),0],180);g.lineWidth=1;
+  [['NORTH',0],['EAST',90],['SOUTH',180],['WEST',270]].forEach(([n,a])=>{const p=proj([Math.sin(a*R),Math.cos(a*R),0]);if(p[2]>-.3)T(n,p[0],p[1]-8,'#e6c98a','12px system-ui','center')});
+  const z=proj([0,0,1]);if(z[2]>-.3){T('+',z[0],z[1]+4,'#6b7db5','14px system-ui','center')}}
+ if(sel&&sel.p[2]>-.5){const[x,y]=sel.p;g.strokeStyle='#fff';g.setLineDash([3,3]);g.beginPath();g.arc(x,y,16,0,7);g.stroke();g.setLineDash([])}
+ if(fr++%8==0){$('tl').textContent=now.toLocaleString([], {dateStyle:'medium',timeStyle:'short'})+' · '+lat.toFixed(2)+'°, '+lon.toFixed(2)+'°';if(sel)panel()}
+ requestAnimationFrame(draw)}
+
+/* ============ UI ============ */
+const fmtRA=x=>{let h=(((Math.atan2(x[1],x[0])/R)/15)+24)%24,m=(h%1)*60;return`${Math.floor(h)}h ${m.toFixed(1)}m`};
+const fmtD=x=>{const d=Math.asin(x[2])/R,s=d<0?'−':'+',a=Math.abs(d);return`${s}${Math.floor(a)}° ${((a%1)*60).toFixed(1)}′`};
+function panel(){const o=sel,[al,az]=altaz(o.v);$('in').textContent=o.n;$('ic').textContent=o.t+(o.a&&o.dso?' · '+o.a:'')+(o.con?' · '+o.con:'');
+ $('idl').innerHTML=`<dt>RA</dt><dd>${fmtRA(o.e)}</dd><dt>Dec</dt><dd>${fmtD(o.e)}</dd><dt>Altitude</dt><dd>${al.toFixed(1)}°${al<0?' (below horizon)':''}</dd><dt>Azimuth</dt><dd>${az.toFixed(1)}°</dd>`+(o.m<50&&o!==MOON?`<dt>Magnitude</dt><dd>${o.m}</dd>`:'');
+ $('ids').textContent=o.desc||`A naked-eye star${o.con?' in '+o.con:''}, magnitude ${o.m}.`}
+function select(o,fly){sel=o;$('info').hidden=!o;if(!o)return;panel();if(fly){const[al,az]=altaz(o.v);tg={A:az,h:Math.max(-60,Math.min(80,al)),fov:o.cn?Math.max(Math.min(V.fov,70),45):Math.min(V.fov,45)}}}
+function pick(x,y){let b=null,bd=22;for(const o of OBJ){if(o.cn||o.p[2]<-.3||(o.pl&&!LAY.planets)||(o.dso&&!LAY.dso))continue;const d=Math.hypot(o.p[0]-x,o.p[1]-y)+(o.m>4?3:0);if(d<bd){bd=d;b=o}}select(b,false)}
+const pt=new Map();let pd=0;const dist=()=>{const a=[...pt.values()];return Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1])||1};
+cv.onpointerdown=e=>{cv.setPointerCapture(e.pointerId);pt.set(e.pointerId,[e.clientX,e.clientY]);tg=null;moved=0;if(pt.size==2)pd=dist()};
+cv.onpointermove=e=>{const o=pt.get(e.pointerId);if(!o)return;const dx=e.clientX-o[0],dy=e.clientY-o[1];pt.set(e.pointerId,[e.clientX,e.clientY]);
+ if(pt.size==1){moved+=Math.abs(dx)+Math.abs(dy);const k=V.fov/H;V.A-=dx*k/Math.max(.25,Math.cos(V.h*R));V.h=Math.max(-89,Math.min(89,V.h+dy*k))}
+ else if(pt.size==2){const d=dist();V.fov=Math.max(3,Math.min(170,V.fov*pd/d));pd=d;moved=99}};
+cv.onpointerup=cv.onpointercancel=e=>{if(pt.size==1&&moved<5)pick(e.clientX,e.clientY);pt.delete(e.pointerId)};
+cv.addEventListener('wheel',e=>{e.preventDefault();tg=null;V.fov=Math.max(3,Math.min(170,V.fov*Math.exp(e.deltaY*.0012)))},{passive:false});
+$('side').innerHTML=BTN.map(([k,i,t])=>`<button data-k="${k}" title="${t}" class="${LAY[k]?'on':''}">${i}</button>`).join('');
+$('side').onclick=e=>{const k=e.target.dataset.k;if(k){LAY[k]=!LAY[k];e.target.classList.toggle('on',!!LAY[k])}};
+$('tm').onclick=e=>{const d=e.target.dataset.d;if(d!==undefined)tOff=d=='0'?0:tOff+ +d};
+$('x').onclick=()=>select(null);
+$('bV').onclick=()=>document.body.classList.toggle('red');
+$('bF').onclick=()=>document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen?.();
+$('bL').onclick=()=>{const s=prompt('Observer location as "latitude, longitude" (degrees; east positive).\nLeave blank to use device location.',lat.toFixed(2)+', '+lon.toFixed(2));if(s===null)return;
+ const m=s.split(',').map(Number);if(m.length==2&&m.every(isFinite)&&Math.abs(m[0])<=90){lat=m[0];lon=m[1]}else navigator.geolocation?.getCurrentPosition(p=>{lat=p.coords.latitude;lon=p.coords.longitude})};
+$('bS').onclick=()=>{$('sw').classList.toggle('on');if($('sw').classList.contains('on'))$('q').focus()};
+function search(){const q=$('q').value.trim().toLowerCase(),r=$('res');r.innerHTML='';if(!q)return[];
+ const hits=OBJ.filter(o=>(o.n+' '+(o.a||'')).toLowerCase().includes(q)).sort((a,b)=>(a.n.toLowerCase().startsWith(q)?0:1)-(b.n.toLowerCase().startsWith(q)?0:1)||a.m-b.m).slice(0,8);
+ hits.forEach(o=>{const d=document.createElement('div');d.innerHTML=`<span>${o.n}${o.a&&o.dso?' — '+o.a:''}</span><i>${o.t}</i>`;d.onclick=()=>{select(o,true);$('q').value='';r.innerHTML='';$('sw').classList.remove('on')};r.appendChild(d)});return hits}
+$('q').oninput=search;$('q').onkeydown=e=>{if(e.key=='Enter'){const h=search();if(h[0])$('res').firstChild.click()}else if(e.key=='Escape')$('sw').classList.remove('on')};
+requestAnimationFrame(draw);
+</script></body></html>
